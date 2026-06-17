@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, LogOut, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Send, LogOut, Loader2, CheckCircle2, AlertCircle, Users } from 'lucide-react';
 
 export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
   const router = useRouter();
+  const [targetAudience, setTargetAudience] = useState('specific_parent');
   const [studentCode, setStudentCode] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +26,7 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
       const res = await fetch('/api/admin/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentCode, message }),
+        body: JSON.stringify({ targetAudience, studentCode, message }),
       });
 
       const data = await res.json();
@@ -34,6 +35,9 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
 
       setStatus({ type: 'success', text: data.message });
       setMessage(''); // Clear message after success
+      if (targetAudience === 'specific_parent') {
+        setStudentCode('');
+      }
     } catch (err: any) {
       setStatus({ type: 'error', text: err.message });
     } finally {
@@ -60,7 +64,7 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-blue-600 px-6 py-4">
             <h2 className="text-white font-semibold flex items-center">
-              <Send className="w-5 h-5 mr-2" /> ផ្ញើសារដំណឹងទៅកាន់អាណាព្យាបាល
+              <Send className="w-5 h-5 mr-2" /> ផ្ញើសារដំណឹង
             </h2>
           </div>
           
@@ -78,18 +82,44 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
 
             <form onSubmit={handleSend} className="space-y-5">
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">
-                  អត្តលេខសិស្ស (Student Code)
+                <label className="text-sm font-medium text-slate-700 block mb-1.5 flex items-center">
+                  <Users className="w-4 h-4 mr-1.5 text-slate-500" />
+                  អ្នកទទួល (Target Audience)
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="ឧ. STU001"
-                  value={studentCode}
-                  onChange={(e) => setStudentCode(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-800"
-                />
+                <div className="relative">
+                  <select
+                    value={targetAudience}
+                    onChange={(e) => setTargetAudience(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-800 appearance-none pr-10"
+                  >
+                    <option value="teacher_all">👨‍🏫 គ្រូបង្រៀនទាំងអស់ (All Teachers)</option>
+                    <option value="student_all">👨‍🎓 សិស្សទាំងអស់ (All Students)</option>
+                    <option value="parent_all">👨‍👩‍👧 អាណាព្យាបាលទាំងអស់ (All Parents)</option>
+                    <option value="specific_parent">🎯 អាណាព្យាបាលជាក់លាក់ (Specific Parent)</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
+                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                  </div>
+                </div>
               </div>
+
+              {targetAudience === 'specific_parent' && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="text-sm font-medium text-slate-700 block mb-1.5">
+                    អត្តលេខសិស្ស (Student Code)
+                  </label>
+                  <input
+                    type="text"
+                    required={targetAudience === 'specific_parent'}
+                    placeholder="ឧ. STU001"
+                    value={studentCode}
+                    onChange={(e) => setStudentCode(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-800"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">
@@ -107,7 +137,7 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
 
               <button
                 type="submit"
-                disabled={isLoading || !studentCode || !message}
+                disabled={isLoading || !message || (targetAudience === 'specific_parent' && !studentCode)}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center disabled:opacity-70 mt-4 shadow-sm"
               >
                 {isLoading ? (

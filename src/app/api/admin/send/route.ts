@@ -12,59 +12,86 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'មិនមានសិទ្ធិទេ (Unauthorized)' }, { status: 401 });
     }
 
-    const { studentCode, message } = await req.json();
+    const { targetAudience, studentCode, message } = await req.json();
 
-    if (!studentCode || !message) {
-      return NextResponse.json({ error: 'សូមបំពេញអត្តលេខសិស្ស និងសារ' }, { status: 400 });
+    if (!targetAudience || !message) {
+      return NextResponse.json({ error: 'សូមបំពេញព័ត៌មានឲ្យបានគ្រប់គ្រាន់' }, { status: 400 });
     }
 
     const supabase = getServiceSupabase();
+    let telegramIdsToNotify: number[] = [];
+    let successCount = 0;
 
-    // 1. Find all parent_telegram_ids linked to this student_code
-    const { data: links, error: linksError } = await supabase
-      .from('parent_student_links')
-      .select('parent_telegram_id')
-      .eq('student_code', studentCode);
+    if (targetAudience === 'specific_parent') {
+      if (!studentCode) {
+        return NextResponse.json({ error: 'សូមបំពេញអត្តលេខសិស្ស' }, { status: 400 });
+      }
 
-    if (linksError) {
-      console.error('Error fetching links:', linksError);
-      return NextResponse.json({ error: 'មានបញ្ហាក្នុងការស្វែងរកអាណាព្យាបាល' }, { status: 500 });
-    }
+      // 1. Find parents linked to this student
+      const { data: links, error: linksError } = await supabase
+        .from('parent_student_links')
+        .select('parent_telegram_id')
+        .eq('student_code', studentCode);
 
-    if (!links || links.length === 0) {
-      return NextResponse.json({ error: 'មិនមានអាណាព្យាបាលភ្ជាប់ជាមួយអត្តលេខនេះទេ' }, { status: 404 });
-    }
+      if (linksError || !links || links.length === 0) {
+        return NextResponse.json({ error: 'មិនមានអាណាព្យាបាលភ្ជាប់ជាមួយអត្តលេខនេះទេ' }, { status: 404 });
+      }
 
-    // 2. Save the notification in the database
-    const { error: notifError } = await supabase
-      .from('notifications')
-      .insert({
+      telegramIdsToNotify = links.map(link => Number(link.parent_telegram_id));
+
+      // Save notification to DB for the specific student
+      await supabase.from('notifications').insert({
         student_code: studentCode,
         message: message,
       });
 
-    if (notifError) {
-      console.error('Error saving notification:', notifError);
-      return NextResponse.json({ error: 'មានបញ្ហាក្នុងការរក្សាទុកសារ' }, { status: 500 });
+    } else {
+      // It's a role broadcast (teacher_all, student_all, parent_all)
+      const roleMap: Record<string, string> = {
+        'teacher_all': 'teacher',
+        'student_all': 'student',
+        'parent_all': 'parent'
+      };
+      
+      const role = roleMap[targetAudience];
+      if (!role) {
+        return NextResponse.json({ error: 'ក្រុមគោលដៅមិនត្រឹមត្រូវ' }, { status: 400 });
+      }
+
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('telegram_chat_id')
+        .eq('role', role);
+
+      if (usersError) {
+        console.error('Error fetching users by role:', usersError);
+        return NextResponse.json({ error: 'មានបញ្ហាក្នុងការស្វែងរកអ្នកប្រើប្រាស់' }, { status: 500 });
+      }
+
+      if (!users || users.length === 0) {
+        return NextResponse.json({ error: 'មិនមានអ្នកប្រើប្រាស់នៅក្នុងក្រុមនេះទេ' }, { status: 404 });
+      }
+
+      telegramIdsToNotify = users.map(u => Number(u.telegram_chat_id));
+      // Note: We don't save role broadcasts to the `notifications` table since they aren't tied to a specific studentCode.
     }
 
-    // 3. Broadcast the message via Telegram Bot
-    let successCount = 0;
-    for (const link of links) {
+    // Broadcast message
+    for (const chatId of telegramIdsToNotify) {
       try {
         await bot.telegram.sendMessage(
-          Number(link.parent_telegram_id),
+          chatId,
           `🔔 សារដំណឹងថ្មីពីសាលា៖\n\n${message}`
         );
         successCount++;
       } catch (err) {
-        console.error(`Failed to send to ${link.parent_telegram_id}:`, err);
+        console.error(`Failed to send to ${chatId}:`, err);
       }
     }
 
     return NextResponse.json({ 
       success: true, 
-      message: `បានផ្ញើសារជោគជ័យទៅកាន់អាណាព្យាបាលចំនួន ${successCount} នាក់` 
+      message: `បានផ្ញើសារជោគជ័យទៅកាន់ ${successCount} គណនី` 
     });
 
   } catch (error) {
